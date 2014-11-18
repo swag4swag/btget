@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+
+import os
+import requests
+import time
+import sys
+import re
+import imghdr
+import unicodedata
+from bs4 import BeautifulSoup
+
+def GetGallery(gallery_url):
+    '''Returns gallery page to be loaded'''
+    fail = 0
+    
+    while fail < 3:
+        try:
+            
+            r = s.get(gallery_url)
+            break
+        except requests.exceptions.RequestException:
+            fail += 1
+            print("Failed to load page (attempt %d / 3). Retrying in 10s..." % fail)
+            time.sleep(10)
+    
+    if fail == 3:
+        sys.exit("Fatal error: Exceeded max retry attempts for page load")
+    
+    return r 
+
+def GetGalleryURLs(o_gallery):
+    '''Returns image URLs'''
+    urllist = []
+    galobjs = []
+    vals = o_gallery.findAll('tr' , {'class' : 'row lang_English chapter_row'})
+
+    for i in vals:
+        galobjs.append(i.findAll('a', href = re.compile("http://bato.to/read/_/*")))
+    for i in galobjs:
+        for j in i:
+            urllist.append(j.get('href'))
+
+    return urllist[::-1]
+    
+def GetGalleryNames(o_gallery):
+    namelist = []
+    galobjs = []
+    vals = o_gallery.findAll('tr' , {'class' : 'row lang_English chapter_row'})
+
+    for i in vals:
+        galobjs.append(i.findAll('a', href = re.compile("http://bato.to/read/_/*")))
+    for i in galobjs:
+        for j in i:
+            namelist.append((re.sub(":.*$", "", (re.sub("Vol.[0-9][0-9]?[0-9]?", "", j.text) ) ) ).strip())
+
+    return namelist[::-1]
+    
+def jpgorpng(url):
+    if (requests.get(url + ".jpg").status_code == 404):
+        return url + ".png"
+    else:
+        return url + ".jpg"
+
+def GetImageURLs(gallery):
+    '''Returns image URLs'''
+    spinner = gallery.findAll('select')[2]
+    pages = spinner.findAll('option')
+    pagelist = []
+    for i in pages:
+        pagelist.append(i.get('value'))
+        
+    return pagelist
+    
+def GetImageURL(page):
+     gallery = BeautifulSoup(GetGallery(page).text)
+     fullimg = gallery.find('div', id="full_image")
+     return fullimg.find('img').get('src')
+     
+def DownloadImage(image_url, trynum):
+    '''Downloads the image, also makes folders'''
+
+    image_name = image_url.rsplit('/',1)[1]#gets the last bit of the URL for the name
+    image_name = unicodedata.normalize('NFKD', image_name).encode('ascii','ignore')
+    #for some reason it's unicode, so let's fix that
+    r = s.get(image_url, stream=True) #time to download
+    #size = int(r.headers['content-length']) #gets the size of the file
+    f_directory = ovdirectory + directory
+    image_name = image_name.decode("ascii")
+    print(image_name)
+    if not os.path.exists(f_directory):
+        os.makedirs(f_directory)
+    
+    if r.status_code == 200:
+        with open(os.path.join(f_directory, image_name), 'wb') as f:
+            for chunk in r.iter_content(1024):
+                f.write(chunk)
+        
+    elif r.status_code == 404:
+        DownloadImage(img_url, trynum + 1)
+    else:
+        raise BadStatus(r.status_code)
+        
+def IsOneShot(gallery):
+    '''Decides what to do depending on what the gallery is'''
+    global ovdirectory
+    global title
+    global pretitle
+    if not gallery.find('div', {'class' : 'googlePlusOne'}):
+        print("Oneshot")
+        return True
+    else:
+        pretitle = gallery.find('h1').text
+        title = pretitle.strip()
+        print(title)
+        ovdirectory = title + "/"
+        print("Not Oneshot")
+        return False
+        
+def DownloadGallery(t_gallery, name):
+    '''Starts downloading the images'''
+    global directory
+    global ovdirectory
+    global currentChapter
+    urls = GetImageURLs(t_gallery)
+    directory = name
+    currentChapter += 1
+    for x in urls:
+        y = GetImageURL(x)
+        print(y)
+        DownloadImage(y, 0)
+        time.sleep(0.100)   #Fute you batoto
+
+global currentChapter
+global pretitle
+global title
+currentChapter = 1
+failed = []
+directory = ''
+ovdirectory = ''
+cmdurl = ""
+
+try:
+    gallery_url = sys.argv[1]
+except IndexError:
+    gallery_url = raw_input("Gallery URL: ")
+
+s = requests.Session()
+
+#Script starts
+#get page
+
+m_gallery = BeautifulSoup(GetGallery(gallery_url).text)
+
+if IsOneShot(m_gallery):
+    DownloadGallery(m_gallery)
+else:
+    gal_urls = GetGalleryURLs(m_gallery)
+    gal_names = GetGalleryNames(m_gallery)
+    x = 0
+    while x < len(gal_urls):
+        DownloadGallery(BeautifulSoup(GetGallery(gal_urls[x]).text), gal_names[x])
+        x+=1
