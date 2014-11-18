@@ -1,0 +1,13 @@
+Downloads batoto to your local folder.
+Requires: 
+os
+requests
+time
+sys
+re (regex)
+imghdr (actually probably not lel)
+BeautifulSoup
+
+usage:
+btget [URL of Manga page]
+Single chapters are fine
